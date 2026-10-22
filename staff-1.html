@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Staff Results</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--ink:#1c2733;--mut:#5d6b7a;--ac:#0f5ea8;--ln:#d9e0e8;--no:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1720;--card:#18222e;--ink:#e8eef5;--mut:#9aa9b8;--ac:#5aa9f0;--ln:#2b3a4a;--no:#ff8a80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:900px;margin:0 auto;padding:20px 16px 48px}h1{font-size:1.5rem;margin:.2em 0}.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:18px;margin:14px 0}
+input{padding:10px 12px;border-radius:10px;border:1px solid var(--ln);background:var(--bg);color:var(--ink);font:inherit}
+button{font:inherit;cursor:pointer;padding:10px 18px;border-radius:10px;border:0;background:var(--ac);color:#fff;font-weight:700}button.s{background:var(--card);color:var(--ink);border:1px solid var(--ln)}
+button:disabled{opacity:.5}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.err{color:var(--no);font-weight:600;margin-top:10px}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:560px}th,td{padding:9px 10px;border-bottom:1px solid var(--ln);text-align:left}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}td.n,th.n{text-align:right}
+.stats{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 12px}.stats b{font-size:1.3rem;display:block}
+</style></head><body><main id="app"></main>
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbzkq0dIFyJtkOeyaSRVgpu2gBBCvdjRrTg2jbJUA5M-eFFuAxhWo6uIXmibaapPQqPK6Q/exec";   // same URL as in index.html
+const $ = document.getElementById('app');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let rows = [], pw = '', err = '', busy = false, q = '', authed = false, qz = '';
+async function load() {
+  pw = document.getElementById('pw') ? document.getElementById('pw').value : pw;
+  busy = true; err = ''; draw();
+  try {
+    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'results', password: pw }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Failed');
+    rows = j.rows; authed = true;
+  } catch (e) { err = e.message; authed = false; }
+  busy = false; draw();
+}
+function filtered() { const s = q.trim().toLowerCase(); return rows.filter(r => (!qz || r.quiz === qz) && (!s || String(r.name).toLowerCase().includes(s) || String(r.reg).toLowerCase().includes(s))); }
+function quizzes() { return [...new Set(rows.map(r => r.quiz))]; }
+function setQz(v) { qz = v; draw(); }
+function xlsx() {
+  const f = filtered(), wb = XLSX.utils.book_new(), names = [...new Set(f.map(r => r.quiz))];
+  names.forEach(n => {
+    const data = [['S.No', 'Student Name', 'Register Number', 'Quiz', 'Marks Scored', 'Total Marks', 'Percentage', 'Submitted At']];
+    f.filter(r => r.quiz === n).forEach((r, i) => data.push([i + 1, r.name, r.reg, r.quiz, r.score, r.total, r.total ? Math.round(r.score / r.total * 1000) / 10 : 0, r.time]));
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 18 }, { wch: 28 }, { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 22 }];
+    XLSX.utils.book_append_sheet(wb, ws, n.replace(/[\[\]:*?\/\\]/g, '').slice(0, 31));
+  });
+  XLSX.writeFile(wb, 'Quiz_Results_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+}
+function search(v) { q = v; draw(); const e = document.getElementById('sq'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } }
+function draw() {
+  if (!authed) { $.innerHTML = `<h1>Staff results</h1><div class="card"><p class="mut">Enter the staff password to view student marks.</p>
+    <div class="row"><input id="pw" type="password" placeholder="Staff password" value="${esc(pw)}" onkeydown="if(event.key==='Enter')load()"><button onclick="load()" ${busy ? 'disabled' : ''}>${busy ? 'Checking…' : 'View results'}</button></div>
+    ${err ? `<div class="err">${esc(err)}</div>` : ''}</div>`; return; }
+  const f = filtered(), avg = f.length ? (f.reduce((a, r) => a + r.score, 0) / f.length).toFixed(2) : '–', tot = f.length ? f[0].total : 0, mixed = new Set(f.map(r => r.total)).size > 1;
+  $.innerHTML = `<h1>Staff results</h1><div class="card"><div class="stats"><div><b>${f.length}</b><span class="mut">students</span></div><div><b>${avg}${tot && !mixed ? ' / ' + tot : ''}</b><span class="mut">average marks</span></div><div><b>${f.length ? Math.max(...f.map(r => r.score)) : '–'}</b><span class="mut">highest</span></div></div>
+  <div class="row"><select id="qs" onchange="setQz(this.value)" style="padding:10px;border-radius:10px;border:1px solid var(--ln);background:var(--bg);color:var(--ink);font:inherit"><option value="">All quizzes</option>${quizzes().map(n => `<option value="${esc(n)}" ${n === qz ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select><input id="sq" placeholder="Search name or register no." value="${esc(q)}" oninput="search(this.value)" style="flex:1;min-width:200px"><button class="s" onclick="load()">↻ Refresh</button><button onclick="xlsx()" ${f.length ? '' : 'disabled'}>⬇ Download Excel</button></div>
+  ${err ? `<div class="err">${esc(err)}</div>` : ''}</div>
+  <div class="card tw"><table><thead><tr><th>#</th><th>Name</th><th>Register No.</th><th>Quiz</th><th class="n">Marks</th><th>Submitted</th></tr></thead><tbody>
+  ${f.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.reg)}</td><td class="mut">${esc(r.quiz)}</td><td class="n"><b>${r.score}</b> / ${r.total}</td><td class="mut">${esc(r.time)}</td></tr>`).join('') || '<tr><td colspan="6" class="mut">No submissions yet.</td></tr>'}</tbody></table></div>`;
+}
+draw();
+</script></body></html>
